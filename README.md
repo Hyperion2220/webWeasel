@@ -1,4 +1,4 @@
-# crawl4AI - Intelligent Web Crawler
+# Web Shark - Intelligent Web Crawler
 
 A high-performance web crawler built with `crawl4ai` and Playwright that extracts and processes website content into Markdown format, optimized for AI applications.
 
