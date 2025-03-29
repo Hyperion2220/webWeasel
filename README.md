@@ -1,4 +1,4 @@
-# Web Shark - Intelligent Web Crawler
+# Web Weasel - Intelligent Web Crawler
 
 A high-performance web crawler built with `crawl4ai` and Playwright that extracts and processes website content into Markdown format, optimized for AI applications.
 
@@ -22,8 +22,8 @@ A high-performance web crawler built with `crawl4ai` and Playwright that extract
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/Hyperion2220/webShark.git
-cd webShark
+git clone https://github.com/Hyperion2220/webWeasel.git
+cd webWeasel
 ```
 
 That's it! The script uses UV's dependency management to automatically install required packages and Playwright browser dependencies when you run it for the first time.
@@ -33,7 +33,7 @@ That's it! The script uses UV's dependency management to automatically install r
 Run the crawler with a target URL:
 
 ```bash
-uv run webShark.py --url "https://example.com"
+uv run webWeasel.py --url "https://example.com"
 ```
 
 The script will:
@@ -56,7 +56,7 @@ To modify these settings, edit the corresponding parameters in the script.
 ## Output Structure
 
 ```
-webShark/
+webWeasel/
 ├── crawler_output/
 │   ├── example/
 │   │   ├── example_com.md
