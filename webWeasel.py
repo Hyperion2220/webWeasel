@@ -24,6 +24,7 @@ __output_base__ = os.path.join(__location__, "crawler_output")
 def parse_args():
     parser = argparse.ArgumentParser(description="Web Weasel - Crawler for AI content extraction")
     parser.add_argument("--url", type=str, required=True, help="URL to crawl (e.g., https://www.example.com)")
+    parser.add_argument("--depth", type=str, choices=["single", "deep"], default="deep", help="Crawl depth: 'single' (just the first page) or 'deep' (full crawl, default)")
     return parser.parse_args()
 
 # Create base output directory if it doesn't exist
@@ -85,35 +86,41 @@ async def main():
             "--no-sandbox"
         ]
     )
-    
-    # Create a filter chain that includes fragment URLs
+
+    # Create a filter chain for domain restriction
     filter_chain = FilterChain([
         DomainFilter(allowed_domains=[domain]),
-        # Include URLs with hash fragments explicitly
-        URLPatternFilter(patterns=["*#*"]),
     ])
-    
-    # Configure BFS strategy for breadth-first crawling (fastest for comprehensive coverage)
-    deep_crawl_strategy = BFSDeepCrawlStrategy(
-        max_depth=3,  # 3 levels deep as requested
-        include_external=False,  # Stay within the domain
-        max_pages=500,  # Increase max pages to ensure complete coverage
-        filter_chain=filter_chain
-    )
-    
-    # Configure the crawl run with optimizations for speed
-    crawl_config = CrawlerRunConfig(
-        cache_mode=CacheMode.BYPASS,  # Fresh content
-        deep_crawl_strategy=deep_crawl_strategy,
-        page_timeout=30000,  # Shorter timeout for faster crawling
-        verbose=True,  # See progress
-        semaphore_count=10  # Increase concurrent crawls for speed
-    )
+
+    # Decide crawl strategy based on depth argument
+    if getattr(args, "depth", "deep") == "single":
+        # Single page (no deep crawling)
+        crawl_config = CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS,
+            page_timeout=30000,
+            verbose=True,
+            semaphore_count=1  # Only one page at a time
+        )
+        print(f"Starting single-page crawl of {target_url}...")
+    else:
+        # Deep crawl (default)
+        deep_crawl_strategy = BFSDeepCrawlStrategy(
+            max_depth=3,  # 3 levels deep as requested
+            include_external=False,  # Stay within the domain
+            max_pages=500,  # Increase max pages to ensure complete coverage
+            filter_chain=filter_chain
+        )
+        crawl_config = CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS,  # Fresh content
+            deep_crawl_strategy=deep_crawl_strategy,
+            page_timeout=30000,  # Shorter timeout for faster crawling
+            verbose=True,  # See progress
+            semaphore_count=10  # Increase concurrent crawls for speed
+        )
+        print(f"Starting deep crawl of {target_url}...")
 
     # Create the crawler and run it
     async with AsyncWebCrawler(config=browser_config) as crawler:
-        print(f"Starting crawl of {target_url}...")
-        
         # The arun method returns a list of results directly for deep crawling in v0.5
         results = await crawler.arun(
             url=target_url, 

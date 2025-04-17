@@ -16,7 +16,7 @@ A high-performance web crawler built with `crawl4ai` and Playwright that extract
 ### Prerequisites
 
 - Python 3.8+
-- UV package manager (recommended)
+- UV package manager
 
 ### Setup
 
@@ -26,15 +26,28 @@ git clone https://github.com/Hyperion2220/webWeasel.git
 cd webWeasel
 ```
 
-That's it! The script uses UV's dependency management to automatically install required packages and Playwright browser dependencies when you run it for the first time.
-
-## Usage
-
-Run the crawler with a target URL:
-
+2. Install Astral UV Package Manager:
 ```bash
-uv run webWeasel.py --url "https://example.com"
+pip install uv
 ```
+
+### Crawl Depth Options
+
+You can control whether to crawl just the first page or the entire site using the `--depth` flag:
+
+- **Single-page crawl:**
+  ```bash
+  uv run webWeasel.py --url "https://example.com" --depth single
+  ```
+  Only the main page will be crawled and saved.
+
+- **Deep crawl (default):**
+  ```bash
+  uv run webWeasel.py --url "https://example.com" --depth deep
+  ```
+  All reachable pages within the domain (up to 3 levels deep, max 500 pages) will be crawled and saved.
+
+If you omit `--depth`, deep crawl is used by default.
 
 The script will:
 1. Create a `crawler_output` directory in the project folder
@@ -46,7 +59,8 @@ The script will:
 
 The crawler has several configurable parameters in the script:
 
-- **Crawl Depth**: Default is 3 levels deep (`max_depth=3`)
+- **Crawl Mode**: Use the `--depth` flag to choose between crawling just the first page (`single`) or performing a deep crawl (`deep`, default).
+- **Crawl Depth**: For deep crawls, the default is 3 levels deep (`max_depth=3`).
 - **Maximum Pages**: Default is 500 pages (`max_pages=500`)
 - **Page Timeout**: Default is 30 seconds (`page_timeout=30000`)
 - **Concurrent Crawls**: Default is 10 simultaneous crawls (`semaphore_count=10`)
