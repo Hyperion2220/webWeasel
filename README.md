@@ -15,7 +15,7 @@ A high-performance web crawler built with `crawl4ai` and Playwright that extract
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.12+
 - UV package manager
 
 ### Setup
@@ -26,9 +26,24 @@ git clone https://github.com/Hyperion2220/webWeasel.git
 cd webWeasel
 ```
 
-2. Install Astral UV Package Manager:
+2. Install the UV package manager:
+
+Windows PowerShell:
 ```bash
-pip install uv
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+Linux/Mac:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+3. Set up the virtual environment and install dependencies:
+```bash
+uv venv
+source .venv/bin/activate
+uv python install 3.12
+uv pip install -U crawl4ai
 ```
 
 ### Crawl Depth Options
