@@ -9,7 +9,7 @@ A high-performance web crawler built with `crawl4ai` and Playwright that extract
 - **Performance Optimized**: Configured for speed with concurrent crawling
 - **Markdown Extraction**: Converts web content to clean Markdown format
 - **Organized Output**: Saves results in website-specific folders
-- **Command Line Interface**: Simple usage with URL parameter
+- **Interactive Interface**: Simple user-friendly prompts for URL and crawl configuration
 
 ## Installation
 
@@ -46,23 +46,22 @@ uv python install 3.12
 uv pip install -U crawl4ai
 ```
 
-### Crawl Depth Options
+### Usage
 
-You can control whether to crawl just the first page or the entire site using the `--depth` flag:
+To run Web Weasel, simply execute:
 
-- **Single-page crawl:**
-  ```bash
-  uv run webWeasel.py --url "https://example.com" --depth single
-  ```
-  Only the main page will be crawled and saved.
+```bash
+uv run webWeasel.py
+```
 
-- **Deep crawl (default):**
-  ```bash
-  uv run webWeasel.py --url "https://example.com" --depth deep
-  ```
-  All reachable pages within the domain (up to 3 levels deep, max 500 pages) will be crawled and saved.
+The interactive prompt will guide you through the process:
 
-If you omit `--depth`, deep crawl is used by default.
+1. Enter the URL to crawl (e.g., "example.com" - the https:// prefix will be added automatically if omitted)
+2. Select the crawl depth mode:
+   - Option 1: Single Page Crawl - Only the main page will be crawled and saved
+   - Option 2: Deep Crawl (default) - All reachable pages within the domain (up to 3 levels deep, max 500 pages) will be crawled and saved
+
+You can exit the program at any time by pressing CTRL+C.
 
 The script will:
 1. Create a `crawler_output` directory in the project folder
@@ -74,7 +73,7 @@ The script will:
 
 The crawler has several configurable parameters in the script:
 
-- **Crawl Mode**: Use the `--depth` flag to choose between crawling just the first page (`single`) or performing a deep crawl (`deep`, default).
+- **Crawl Mode**: Choose between crawling just the first page (`single`) or performing a deep crawl (`deep`, default) via the interactive prompt.
 - **Crawl Depth**: For deep crawls, the default is 3 levels deep (`max_depth=3`).
 - **Maximum Pages**: Default is 500 pages (`max_pages=500`)
 - **Page Timeout**: Default is 30 seconds (`page_timeout=30000`)

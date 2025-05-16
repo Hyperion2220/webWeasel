@@ -1,13 +1,13 @@
 # /// script
 # dependencies = [
-#   "crawl4ai>=0.5.0",
-#   "playwright>=1.51.0",
+#   "crawl4ai>=0.6.3",
+#   "playwright>=1.52.0",
 # ]
 # ///
 
 """
 Run with: 
-uv run webWeasel.py --url "https://example.com"
+uv run webWeasel.py
 
 """
 
@@ -15,17 +15,54 @@ import os
 import sys
 import asyncio
 import subprocess
-import argparse
 
 __location__ = os.path.dirname(os.path.abspath(__file__))
 __output_base__ = os.path.join(__location__, "crawler_output")
 
-# Parse command line arguments
-def parse_args():
-    parser = argparse.ArgumentParser(description="Web Weasel - Crawler for AI content extraction")
-    parser.add_argument("--url", type=str, required=True, help="URL to crawl (e.g., https://www.example.com)")
-    parser.add_argument("--depth", type=str, choices=["single", "deep"], default="deep", help="Crawl depth: 'single' (just the first page) or 'deep' (full crawl, default)")
-    return parser.parse_args()
+# --- New: Interactive prompt for config ---
+def prompt_user_for_config() -> tuple[str, str]:
+    """
+    Prompt the user for the target URL and crawl depth mode.
+    Returns:
+        tuple: (target_url, depth_mode)
+    Handles KeyboardInterrupt and EOFError for graceful exit.
+    """
+    print("\nWelcome to Web Weasel!\n")
+    while True:
+        try:
+            url_input = input("Enter the URL to crawl: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\n\nExiting Web Weasel. Goodbye!")
+            sys.exit(0)
+        # Normalize URL: add https:// if missing
+        if url_input:
+            if not url_input.startswith("http://") and not url_input.startswith("https://"):
+                target_url = f"https://{url_input}"
+            else:
+                target_url = url_input
+            break
+        else:
+            print("Please enter a valid URL.")
+    print("\nSelect crawl depth mode:")
+    print("  1. Single Page Crawl")
+    print("  2. Deep Crawl")
+    print()  # Add blank line before input
+    while True:
+        try:
+            depth_choice = input("Enter Choice (CTRL-C to Exit): ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print("\n\nExiting Web Weasel. Goodbye!")
+            sys.exit(0)
+        if depth_choice == "1":
+            depth_mode = "single"
+            break
+        elif depth_choice == "2" or depth_choice == "":
+            depth_mode = "deep"
+            break
+        else:
+            print("Invalid input. Please enter 1 or 2.")
+    print()
+    return target_url, depth_mode
 
 # Create base output directory if it doesn't exist
 os.makedirs(__output_base__, exist_ok=True)
@@ -51,12 +88,13 @@ except FileNotFoundError:
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
-from crawl4ai.deep_crawling.filters import DomainFilter, FilterChain, URLPatternFilter
+from crawl4ai.deep_crawling.filters import DomainFilter, FilterChain
+from crawl4ai.content_filter_strategy import PruningContentFilter
+from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 
 async def main():
-    # Parse command line arguments
-    args = parse_args()
-    target_url = args.url
+    # Prompt user for config instead of parsing CLI args
+    target_url, depth_mode = prompt_user_for_config()
     
     # Extract domain for filtering
     from urllib.parse import urlparse
@@ -92,14 +130,19 @@ async def main():
         DomainFilter(allowed_domains=[domain]),
     ])
 
+    # Create PruningContentFilter and DefaultMarkdownGenerator
+    pruning_filter = PruningContentFilter()
+    markdown_generator = DefaultMarkdownGenerator(content_filter=pruning_filter)
+
     # Decide crawl strategy based on depth argument
-    if getattr(args, "depth", "deep") == "single":
+    if depth_mode == "single":
         # Single page (no deep crawling)
         crawl_config = CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS,
             page_timeout=30000,
             verbose=True,
-            semaphore_count=1  # Only one page at a time
+            semaphore_count=1,  # Only one page at a time
+            markdown_generator=markdown_generator,
         )
         print(f"Starting single-page crawl of {target_url}...")
     else:
@@ -115,7 +158,8 @@ async def main():
             deep_crawl_strategy=deep_crawl_strategy,
             page_timeout=30000,  # Shorter timeout for faster crawling
             verbose=True,  # See progress
-            semaphore_count=10  # Increase concurrent crawls for speed
+            semaphore_count=10,  # Increase concurrent crawls for speed
+            markdown_generator=markdown_generator,
         )
         print(f"Starting deep crawl of {target_url}...")
 
@@ -171,4 +215,8 @@ async def main():
         print(f"  - Results saved to: {__output__}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n\nExiting Web Weasel. Goodbye!")
+        sys.exit(0)
