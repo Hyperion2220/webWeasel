@@ -78,6 +78,31 @@ The script will:
 5. Print detailed progress, success, and error messages for each page
 6. Attempt to install Playwright browser dependencies automatically if not already present
 
+## New Feature: Automatic Markdown Merging with Repomix
+
+After every crawl (single page or deep), Web Weasel will automatically post-process all crawled markdown files using [Repomix](https://github.com/andersonby/python-repomix). This merges all `.md` files from the crawl output into a single, well-structured markdown file for easy analysis, LLM ingestion, or archiving.
+
+- The merged markdown is saved in a new `repomix-output/<domain>/repomix-<domain>.md` directory at the project root.
+- This works for both single-page and deep crawls.
+- The process is fully automatic—no extra steps required!
+
+**Example output structure:**
+
+```
+webWeasel/
+├── crawler_output/
+│   └── crawl4ai/
+│       ├── ...individual .md files...
+├── repomix-output/
+│   └── crawl4ai/
+│       └── repomix-crawl4ai.md
+```
+
+**Why is this useful?**
+- Instantly get a single, LLM-friendly markdown file for the entire crawl.
+- No manual merging or post-processing needed.
+- Great for RAG, AI analysis, or sharing crawl results.
+
 ## Configuration
 
 The crawler has several configurable parameters in the script:

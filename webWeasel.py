@@ -15,6 +15,8 @@ import os
 import sys
 import asyncio
 import subprocess
+# Add repomix imports
+from repomix import RepoProcessor, RepomixConfig
 
 __location__ = os.path.dirname(os.path.abspath(__file__))
 __output_base__ = os.path.join(__location__, "crawler_output")
@@ -71,21 +73,6 @@ os.makedirs(__output_base__, exist_ok=True)
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(parent_dir)
 
-# Install Playwright browsers
-print("Installing Playwright browser dependencies...")
-try:
-    subprocess.run(["playwright", "install", "--with-deps", "chromium"], 
-                  stdout=subprocess.PIPE, 
-                  stderr=subprocess.PIPE,
-                  check=True)
-    print("Playwright browser dependencies installed successfully!")
-except subprocess.CalledProcessError as e:
-    print(f"Warning: Playwright installation may have issues: {e}")
-    print("Continuing anyway as browsers might already be installed...")
-except FileNotFoundError:
-    print("Warning: Playwright command not found. Make sure it's installed properly.")
-    print("Continuing anyway as browsers might already be installed...")
-
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 from crawl4ai.deep_crawling.filters import DomainFilter, FilterChain
@@ -101,11 +88,12 @@ async def main():
     parsed_url = urlparse(target_url)
     domain = parsed_url.netloc
     
-    # Extract website name (remove www. prefix if present, and take the main domain name)
-    if domain.startswith('www.'):
-        website_name = domain[4:].split('.')[0]
+    # Extract website name (main domain, e.g., 'ai.pydantic.dev' -> 'pydantic', 'docs.crawl4ai.com' -> 'crawl4ai')
+    domain_parts = domain.split('.')
+    if len(domain_parts) >= 2:
+        website_name = domain_parts[-2]
     else:
-        website_name = domain.split('.')[0]
+        website_name = domain_parts[0]
     
     # Create website-specific output directory
     __output__ = os.path.join(__output_base__, website_name)
@@ -223,8 +211,65 @@ async def main():
         print(f"  - Successfully saved: {success_count} markdown files")
         print(f"  - Failed: {len(result_list) - success_count}")
         print(f"  - Results saved to: {__output__}")
+        # Post-process with repomix
+        postprocess_with_repomix(__output__)
+
+def postprocess_with_repomix(output_folder):
+    """
+    Post-process all .md files in the output_folder using repomix, compiling them into a single .md file.
+    Output is written to a new 'repomix-output' directory at the same level as output_folder.
+    """
+    # Write repomix output to a subfolder named after the main domain (website_name)
+    website_name = os.path.basename(output_folder)
+    repomix_dir = os.path.join(__location__, "repomix-output", website_name)
+    os.makedirs(repomix_dir, exist_ok=True)
+    output_file = os.path.join(repomix_dir, f"repomix-{website_name}.md")
+    config = RepomixConfig()
+    config.output.file_path = output_file
+    config.output.style = "markdown"
+    config.output.header_text = ""
+    config.output.instruction_file_path = ""
+    config.output.remove_comments = False
+    config.output.remove_empty_lines = False
+    config.output.top_files_length = 5
+    config.output.show_line_numbers = False
+    config.output.copy_to_clipboard = False
+    config.output.include_empty_directories = False
+    config.output.calculate_tokens = True
+    config.output.show_file_stats = True
+    config.output.show_directory_structure = True
+    config.include = []
+    config.ignore.custom_patterns = ["*.log", "*.tmp", "**/__pycache__/**"]
+    config.ignore.use_gitignore = True
+    config.ignore.use_default_ignore = True
+    config.security.enable_security_check = True
+    config.security.exclude_suspicious_files = True
+    print("\nPacking your codebase into an AI-friendly format...")
+    processor = RepoProcessor(output_folder, config=config)
+    result = processor.process()
+    print("\nRepomix completed!")
+    print(f"Compiled output file: {result.config.output.file_path}")
+    # Print repomix statistics
+    print("\nRepomix Statistics:\n")
+    print(f"Total files: {result.total_files}")
+    print(f"Total characters: {result.total_chars}")
+    print(f"Total tokens: {result.total_tokens}\n")
 
 if __name__ == "__main__":
+    # Install Playwright browsers only when running as main script
+    print("Installing Playwright browser dependencies...")
+    try:
+        subprocess.run(["playwright", "install", "--with-deps", "chromium"], 
+                      stdout=subprocess.PIPE, 
+                      stderr=subprocess.PIPE,
+                      check=True)
+        print("Playwright browser dependencies installed successfully!")
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: Playwright installation may have issues: {e}")
+        print("Continuing anyway as browsers might already be installed...")
+    except FileNotFoundError:
+        print("Warning: Playwright command not found. Make sure it's installed properly.")
+        print("Continuing anyway as browsers might already be installed...")
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
