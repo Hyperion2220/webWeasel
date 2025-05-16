@@ -17,3 +17,4 @@ Thumbs.db
 # Added files to ignore
 .env
 crawler_output/
+repomix_output/
