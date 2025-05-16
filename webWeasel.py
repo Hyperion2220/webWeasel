@@ -2,6 +2,7 @@
 # dependencies = [
 #   "crawl4ai>=0.6.3",
 #   "playwright>=1.52.0",
+#   "repomix>=0.2.7"
 # ]
 # ///
 
