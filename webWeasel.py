@@ -132,7 +132,16 @@ async def main():
 
     # Create PruningContentFilter and DefaultMarkdownGenerator
     pruning_filter = PruningContentFilter()
-    markdown_generator = DefaultMarkdownGenerator(content_filter=pruning_filter)
+    markdown_generator = DefaultMarkdownGenerator(
+        content_filter=pruning_filter,
+        content_source="raw_html",  # Use raw HTML to better preserve code blocks
+        options={
+            "preserve_code_blocks": True,
+            "handle_code_in_pre": True,
+            "body_width": 0,  # No line wrapping
+            "mark_code": True,  # Try to always fence code blocks
+        }
+    )
 
     # Decide crawl strategy based on depth argument
     if depth_mode == "single":
@@ -173,32 +182,32 @@ async def main():
         
         print(f"\n===== Crawl complete! Found {len(results) if isinstance(results, list) else 1} pages =====")
         
-        # Process results (which should be a list in v0.5 for deep crawling)
+        # Process results (list or single result only, no streaming)
         result_list = results if isinstance(results, list) else [results]
         success_count = 0
-        
-        for i, result in enumerate(result_list):
+        def process_result(i, result):
+            nonlocal success_count
             if hasattr(result, 'success') and result.success:
-                # Get URL and create safe filename
                 url = result.url if hasattr(result, 'url') else f"page_{i}"
                 filename = url.replace("://", "_").replace("/", "_").replace(".", "_")
                 if len(filename) > 100:
                     filename = filename[:100]
-                
-                # Only save markdown content
                 markdown_content = None
-                
-                # Check different possible locations of markdown content in v0.5
+                # Prefer filtered markdown (fit_markdown) if available
                 if hasattr(result, 'markdown_v2') and result.markdown_v2:
-                    if hasattr(result.markdown_v2, 'raw_markdown'):
-                        markdown_content = result.markdown_v2.raw_markdown
+                    md_obj = result.markdown_v2
+                    if hasattr(md_obj, 'fit_markdown') and md_obj.fit_markdown:
+                        markdown_content = md_obj.fit_markdown
+                    elif hasattr(md_obj, 'raw_markdown'):
+                        markdown_content = md_obj.raw_markdown
                 elif hasattr(result, 'markdown') and result.markdown:
-                    if isinstance(result.markdown, str):
-                        markdown_content = result.markdown
-                    elif hasattr(result.markdown, 'raw_markdown'):
-                        markdown_content = result.markdown.raw_markdown
-                
-                # Save markdown content to file
+                    md_obj = result.markdown
+                    if hasattr(md_obj, 'fit_markdown') and md_obj.fit_markdown:
+                        markdown_content = md_obj.fit_markdown
+                    elif hasattr(md_obj, 'raw_markdown'):
+                        markdown_content = md_obj.raw_markdown
+                    elif isinstance(md_obj, str):
+                        markdown_content = md_obj
                 if markdown_content:
                     with open(os.path.join(__output__, f"{filename}.md"), "w", encoding="utf-8") as f:
                         f.write(markdown_content)
@@ -208,7 +217,8 @@ async def main():
                 error_msg = result.error_message if hasattr(result, 'error_message') else 'Unknown error'
                 url = result.url if hasattr(result, 'url') else f"page_{i}"
                 print(f"❌ [{i+1}/{len(result_list)}] Failed to crawl {url}: {error_msg}")
-        
+        for i, result in enumerate(result_list):
+            process_result(i, result)
         print(f"\nCrawling complete!")
         print(f"  - Successfully saved: {success_count} markdown files")
         print(f"  - Failed: {len(result_list) - success_count}")
