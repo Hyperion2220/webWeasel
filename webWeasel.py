@@ -16,13 +16,11 @@ import os
 import sys
 import asyncio
 import subprocess
-# Add repomix imports
 from repomix import RepoProcessor, RepomixConfig
 
 __location__ = os.path.dirname(os.path.abspath(__file__))
 __output_base__ = os.path.join(__location__, "crawler_output")
 
-# --- New: Interactive prompt for config ---
 def prompt_user_for_config() -> tuple[str, str]:
     """
     Prompt the user for the target URL and crawl depth mode.
@@ -30,7 +28,6 @@ def prompt_user_for_config() -> tuple[str, str]:
         tuple: (target_url, depth_mode)
     Handles KeyboardInterrupt and EOFError for graceful exit.
     """
-    print("\nWelcome to Web Weasel!\n")
     while True:
         try:
             url_input = input("Enter the URL to crawl: ").strip()
@@ -52,7 +49,7 @@ def prompt_user_for_config() -> tuple[str, str]:
     print()  # Add blank line before input
     while True:
         try:
-            depth_choice = input("Enter Choice (CTRL-C to Exit): ").strip().lower()
+            depth_choice = input("Enter Choice or (c)ancel: ").strip().lower()
         except (KeyboardInterrupt, EOFError):
             print("\n\nExiting Web Weasel. Goodbye!")
             sys.exit(0)
@@ -62,8 +59,11 @@ def prompt_user_for_config() -> tuple[str, str]:
         elif depth_choice == "2" or depth_choice == "":
             depth_mode = "deep"
             break
+        elif depth_choice == "c":
+            # Return special string values to indicate cancel
+            return "__CANCEL__", "__CANCEL__"
         else:
-            print("Invalid input. Please enter 1 or 2.")
+            print("Invalid input. Please enter 1, 2, or c.")
     print()
     return target_url, depth_mode
 
@@ -80,151 +80,214 @@ from crawl4ai.deep_crawling.filters import DomainFilter, FilterChain
 from crawl4ai.content_filter_strategy import PruningContentFilter
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 
-async def main():
-    # Prompt user for config instead of parsing CLI args
-    target_url, depth_mode = prompt_user_for_config()
-    
-    # Extract domain for filtering
-    from urllib.parse import urlparse
-    parsed_url = urlparse(target_url)
-    domain = parsed_url.netloc
-    
-    # Extract website name (main domain, e.g., 'ai.pydantic.dev' -> 'pydantic', 'docs.crawl4ai.com' -> 'crawl4ai')
-    domain_parts = domain.split('.')
-    if len(domain_parts) >= 2:
-        website_name = domain_parts[-2]
-    else:
-        website_name = domain_parts[0]
-    
-    # Create website-specific output directory
-    __output__ = os.path.join(__output_base__, website_name)
-    os.makedirs(__output__, exist_ok=True)
-    
-    print(f"\n=== Fast Deep Crawling of {domain} ===")
-    
-    # Configure the browser for optimal performance
-    browser_config = BrowserConfig(
-        headless=True,
-        browser_type="chromium",
-        text_mode=True,  # Faster as it doesn't load images
-        extra_args=[
-            "--disable-gpu", 
-            "--disable-dev-shm-usage", 
-            "--no-sandbox"
-        ]
-    )
+def main_menu():
+    print("\nWelcome to Web Weasel\n") 
+    print("1. Crawl a website")
+    print("2. Run Repomix")
+    print("3. Exit")  #
+    print()  # Add blank line above prompt
+    while True:
+        choice = input("Select an option: ").strip().lower()
+        if choice in ("1", "2", "3"):
+            return choice
+        print("Invalid input. Please enter 1, 2, or 3.")
 
-    # Create a filter chain for domain restriction
-    filter_chain = FilterChain([
-        DomainFilter(allowed_domains=[domain]),
-    ])
+def select_crawler_output_folder():
+    base_dir = os.path.join(__location__, "crawler_output")
+    folders = [f for f in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, f))]
+    if not folders:
+        print("No folders found in crawler_output.")
+        return None
+    print("\nAvailable folders in crawler_output:")
+    for idx, folder in enumerate(folders, 1):
+        print(f"  {idx}. {folder}")
+    print()
+    while True:
+        choice = input(f"Select a folder by number or (c)ancel: ").strip().lower()
+        if choice == 'c':
+            return None
+        if choice.isdigit() and 1 <= int(choice) <= len(folders):
+            return os.path.join(base_dir, folders[int(choice)-1])
+        print("Invalid input. Please enter a valid number or 'c' to cancel.")
 
-    # Create PruningContentFilter and DefaultMarkdownGenerator
-    pruning_filter = PruningContentFilter()
-    markdown_generator = DefaultMarkdownGenerator(
-        content_filter=pruning_filter,
-        content_source="raw_html",  # Use raw HTML to better preserve code blocks
-        options={
-            "preserve_code_blocks": True,
-            "handle_code_in_pre": True,
-            "body_width": 0,  # No line wrapping
-            "mark_code": True,  # Try to always fence code blocks
-        }
-    )
-
-    # Decide crawl strategy based on depth argument
-    if depth_mode == "single":
-        # Single page (no deep crawling)
-        crawl_config = CrawlerRunConfig(
-            cache_mode=CacheMode.BYPASS,
-            page_timeout=30000,
-            verbose=True,
-            semaphore_count=1,  # Only one page at a time
-            markdown_generator=markdown_generator,
-        )
-        print(f"Starting single-page crawl of {target_url}...")
-    else:
-        # Deep crawl (default)
-        deep_crawl_strategy = BFSDeepCrawlStrategy(
-            max_depth=3,  # 3 levels deep as requested
-            include_external=False,  # Stay within the domain
-            max_pages=500,  # Increase max pages to ensure complete coverage
-            filter_chain=filter_chain
-        )
-        crawl_config = CrawlerRunConfig(
-            cache_mode=CacheMode.BYPASS,  # Fresh content
-            deep_crawl_strategy=deep_crawl_strategy,
-            page_timeout=30000,  # Shorter timeout for faster crawling
-            verbose=True,  # See progress
-            semaphore_count=10,  # Increase concurrent crawls for speed
-            markdown_generator=markdown_generator,
-        )
-        print(f"Starting deep crawl of {target_url}...")
-
-    # Create the crawler and run it
-    async with AsyncWebCrawler(config=browser_config) as crawler:
-        # The arun method returns a list of results directly for deep crawling in v0.5
-        results = await crawler.arun(
-            url=target_url, 
-            config=crawl_config
-        )
-        
-        print(f"\n===== Crawl complete! Found {len(results) if isinstance(results, list) else 1} pages =====")
-        
-        # Process results (list or single result only, no streaming)
-        result_list = results if isinstance(results, list) else [results]
-        success_count = 0
-        def process_result(i, result):
-            nonlocal success_count
-            if hasattr(result, 'success') and result.success:
-                url = result.url if hasattr(result, 'url') else f"page_{i}"
-                filename = url.replace("://", "_").replace("/", "_").replace(".", "_")
-                if len(filename) > 100:
-                    filename = filename[:100]
-                markdown_content = None
-                # Prefer filtered markdown (fit_markdown) if available
-                if hasattr(result, 'markdown_v2') and result.markdown_v2:
-                    md_obj = result.markdown_v2
-                    if hasattr(md_obj, 'fit_markdown') and md_obj.fit_markdown:
-                        markdown_content = md_obj.fit_markdown
-                    elif hasattr(md_obj, 'raw_markdown'):
-                        markdown_content = md_obj.raw_markdown
-                elif hasattr(result, 'markdown') and result.markdown:
-                    md_obj = result.markdown
-                    if hasattr(md_obj, 'fit_markdown') and md_obj.fit_markdown:
-                        markdown_content = md_obj.fit_markdown
-                    elif hasattr(md_obj, 'raw_markdown'):
-                        markdown_content = md_obj.raw_markdown
-                    elif isinstance(md_obj, str):
-                        markdown_content = md_obj
-                if markdown_content:
-                    with open(os.path.join(__output__, f"{filename}.md"), "w", encoding="utf-8") as f:
-                        f.write(markdown_content)
-                    print(f"✅ [{i+1}/{len(result_list)}] Saved markdown for {url}")
-                    success_count += 1
+# Update main to accept choice as argument and skip menu
+async def main(choice=None):
+    while True:
+        if choice is None:
+            choice = main_menu()
+        if choice == "1":
+            # Prompt user for config
+            target_url, depth_mode = prompt_user_for_config()
+            if target_url == "__CANCEL__" or depth_mode == "__CANCEL__":
+                # User cancelled, return to main menu
+                choice = None
+                continue
+            # Install Playwright browser dependencies after URL is entered
+            print("Installing Playwright browser dependencies...")
+            try:
+                subprocess.run(["playwright", "install", "--with-deps", "chromium"],
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE,
+                               check=True)
+                print("Playwright browser dependencies installed successfully!")
+            except subprocess.CalledProcessError as e:
+                print(f"Warning: Playwright installation may have issues: {e}")
+                print("Continuing anyway as browsers might already be installed...")
+            except FileNotFoundError:
+                print("Warning: Playwright command not found. Make sure it's installed properly.")
+                print("Continuing anyway as browsers might already be installed...")
+            
+            # Extract domain for filtering
+            from urllib.parse import urlparse
+            parsed_url = urlparse(target_url)
+            domain = parsed_url.netloc
+            
+            # Extract website name (main domain, e.g., 'ai.pydantic.dev' -> 'pydantic', 'docs.crawl4ai.com' -> 'crawl4ai')
+            domain_parts = domain.split('.')
+            if len(domain_parts) >= 2:
+                website_name = domain_parts[-2]
             else:
-                error_msg = result.error_message if hasattr(result, 'error_message') else 'Unknown error'
-                url = result.url if hasattr(result, 'url') else f"page_{i}"
-                print(f"❌ [{i+1}/{len(result_list)}] Failed to crawl {url}: {error_msg}")
-        for i, result in enumerate(result_list):
-            process_result(i, result)
-        print(f"\nCrawling complete!")
-        print(f"  - Successfully saved: {success_count} markdown files")
-        print(f"  - Failed: {len(result_list) - success_count}")
-        print(f"  - Results saved to: {__output__}")
-        # Post-process with repomix
-        postprocess_with_repomix(__output__)
+                website_name = domain_parts[0]
+            
+            # Create website-specific output directory
+            __output__ = os.path.join(__output_base__, website_name)
+            os.makedirs(__output__, exist_ok=True)
+            
+            print(f"\n=== Fast Deep Crawling of {domain} ===")
+            
+            # Configure the browser for optimal performance
+            browser_config = BrowserConfig(
+                headless=True,
+                browser_type="chromium",
+                text_mode=True,  # Faster as it doesn't load images
+                extra_args=[
+                    "--disable-gpu", 
+                    "--disable-dev-shm-usage", 
+                    "--no-sandbox"
+                ]
+            )
+
+            # Create a filter chain for domain restriction
+            filter_chain = FilterChain([
+                DomainFilter(allowed_domains=[domain]),
+            ])
+
+            # Create PruningContentFilter and DefaultMarkdownGenerator
+            pruning_filter = PruningContentFilter()
+            markdown_generator = DefaultMarkdownGenerator(
+                content_filter=pruning_filter,
+                content_source="raw_html",  # Use raw HTML to better preserve code blocks
+                options={
+                    "preserve_code_blocks": True,
+                    "handle_code_in_pre": True,
+                    "body_width": 0,  # No line wrapping
+                    "mark_code": True,  # Try to always fence code blocks
+                    "citations": True,
+                }
+            )
+
+            # Decide crawl strategy based on depth argument
+            if depth_mode == "single":
+                # Single page (no deep crawling)
+                crawl_config = CrawlerRunConfig(
+                    cache_mode=CacheMode.BYPASS,
+                    page_timeout=30000,
+                    verbose=True,
+                    semaphore_count=1,  # Only one page at a time
+                    markdown_generator=markdown_generator,
+                )
+                print(f"Starting single-page crawl of {target_url}...")
+            else:
+                # Deep crawl - (Breadth-First Search): Explores the website level by level.
+                deep_crawl_strategy = BFSDeepCrawlStrategy(
+                    max_depth=3,  # 3 levels deep as requested
+                    include_external=False,  # Stay within the domain
+                    max_pages=500,  # Increase max pages to ensure complete coverage
+                    filter_chain=filter_chain
+                )
+                crawl_config = CrawlerRunConfig(
+                    cache_mode=CacheMode.BYPASS,  # Fresh content
+                    deep_crawl_strategy=deep_crawl_strategy,
+                    page_timeout=30000,  # Shorter timeout for faster crawling
+                    verbose=True,  # See progress
+                    semaphore_count=10,  # Increase concurrent crawls for speed
+                    markdown_generator=markdown_generator,
+                )
+                print(f"Starting deep crawl of {target_url}...")
+
+            # Create the crawler and run it
+            async with AsyncWebCrawler(config=browser_config) as crawler:
+                results = await crawler.arun(
+                    url=target_url, 
+                    config=crawl_config
+                )
+                
+                print(f"\n===== Crawl complete! Found {len(results) if isinstance(results, list) else 1} pages =====")
+                
+                # Process results (list or single result only, no streaming)
+                result_list = results if isinstance(results, list) else [results]
+                success_count = 0
+                def process_result(i, result):
+                    nonlocal success_count
+                    if hasattr(result, 'success') and result.success:
+                        url = result.url if hasattr(result, 'url') else f"page_{i}"
+                        filename = url.replace("://", "_").replace("/", "_").replace(".", "_")
+                        if len(filename) > 100:
+                            filename = filename[:100]
+                        markdown_content = None
+                        # Use only the new markdown property (MarkdownGenerationResult)
+                        if hasattr(result, 'markdown') and result.markdown:
+                            md_obj = result.markdown
+                            if hasattr(md_obj, 'fit_markdown') and md_obj.fit_markdown:
+                                markdown_content = md_obj.fit_markdown
+                            elif hasattr(md_obj, 'raw_markdown') and md_obj.raw_markdown:
+                                markdown_content = md_obj.raw_markdown
+                            elif isinstance(md_obj, str):
+                                markdown_content = md_obj
+                        if markdown_content:
+                            with open(os.path.join(__output__, f"{filename}.md"), "w", encoding="utf-8") as f:
+                                f.write(markdown_content)
+                            print(f"✅ [{i+1}/{len(result_list)}] Saved markdown for {url}")
+                            success_count += 1
+                    else:
+                        error_msg = result.error_message if hasattr(result, 'error_message') else 'Unknown error'
+                        url = result.url if hasattr(result, 'url') else f"page_{i}"
+                        print(f"❌ [{i+1}/{len(result_list)}] Failed to crawl {url}: {error_msg}")
+                for i, result in enumerate(result_list):
+                    process_result(i, result)
+                print(f"\nCrawling complete!")
+                print(f"  - Successfully saved: {success_count} markdown files")
+                print(f"  - Failed: {len(result_list) - success_count}")
+                print(f"  - Results saved to: {__output__}")
+                # Post-process with repomix
+                postprocess_with_repomix(__output__)
+            choice = None  # Return to main menu
+        elif choice == "2":
+            folder = select_crawler_output_folder()
+            if folder and os.path.isdir(folder):
+                postprocess_with_repomix(folder)
+            elif folder is None:
+                print("Cancelled.")
+            else:
+                print("Invalid folder selection.")
+            choice = None  # Return to main menu
+        elif choice == "3":
+            print("Goodbye!")
+            sys.exit(0)
+        else:
+            print("Invalid choice. Returning to main menu.")
+            choice = None
 
 def postprocess_with_repomix(output_folder):
     """
     Post-process all .md files in the output_folder using repomix, compiling them into a single .md file.
-    Output is written to a new 'repomix-output' directory at the same level as output_folder.
+    Output is written to a new 'repomix_output' directory at the same level as output_folder.
     """
     # Write repomix output to a subfolder named after the main domain (website_name)
     website_name = os.path.basename(output_folder)
-    repomix_dir = os.path.join(__location__, "repomix-output", website_name)
+    repomix_dir = os.path.join(__location__, "repomix_output", website_name)
     os.makedirs(repomix_dir, exist_ok=True)
-    output_file = os.path.join(repomix_dir, f"repomix-{website_name}.md")
+    output_file = os.path.join(repomix_dir, f"repomix_{website_name}.md")
     config = RepomixConfig()
     config.output.file_path = output_file
     config.output.style = "markdown"
@@ -244,7 +307,7 @@ def postprocess_with_repomix(output_folder):
     config.ignore.use_gitignore = True
     config.ignore.use_default_ignore = True
     config.security.enable_security_check = True
-    config.security.exclude_suspicious_files = True
+    config.security.exclude_suspicious_files = False
     print("\nPacking your codebase into an AI-friendly format...")
     processor = RepoProcessor(output_folder, config=config)
     result = processor.process()
@@ -257,20 +320,6 @@ def postprocess_with_repomix(output_folder):
     print(f"Total tokens: {result.total_tokens}\n")
 
 if __name__ == "__main__":
-    # Install Playwright browsers only when running as main script
-    print("Installing Playwright browser dependencies...")
-    try:
-        subprocess.run(["playwright", "install", "--with-deps", "chromium"], 
-                      stdout=subprocess.PIPE, 
-                      stderr=subprocess.PIPE,
-                      check=True)
-        print("Playwright browser dependencies installed successfully!")
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: Playwright installation may have issues: {e}")
-        print("Continuing anyway as browsers might already be installed...")
-    except FileNotFoundError:
-        print("Warning: Playwright command not found. Make sure it's installed properly.")
-        print("Continuing anyway as browsers might already be installed...")
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
