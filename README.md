@@ -69,12 +69,12 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 Windows:
 ```bash
-uv venv && .\.venv\Scripts\Activate.ps1 && uv python install 3.12 && uv pip install -U crawl4ai playwright repomix
+uv venv webWeasel && webWeasel\Scripts\Activate.ps1 && uv python install 3.12 && uv pip install -U crawl4ai playwright repomix
 ```
 
 Linux/Mac:
 ```bash
-uv venv && source .venv/bin/activate && uv python install 3.12 && uv pip install -U crawl4ai playwright repomix
+uv venv webWeasel && source webWeasel/bin/activate && uv python install 3.12 && uv pip install -U crawl4ai playwright repomix
 ```
 
 ## Usage
@@ -153,12 +153,12 @@ All configuration options are available in the script:
 | Text-Only Mode | Enabled | For speed and LLM-friendly output |
 | Markdown Options | Various | Code block preservation, no line wrapping, citations, etc. |
 
-To modify these settings, edit the corresponding parameters in `webWeasel.py`.
+To modify these settings, edit the `CrawlConfig` class in `webWeasel.py`.
 
 ## Limitations
 
 - Only extracts text content (images are not downloaded)
 - URLs with complex fragments might not be fully explored
 - Respects robots.txt by default
-- Output filenames are truncated to 100 characters for compatibility
+- Output filenames are sanitized and truncated to 100 characters for compatibility
 - Playwright browser dependencies are only installed when needed for web crawling
