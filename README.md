@@ -69,12 +69,12 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 Windows:
 ```bash
-uv venv webWeasel && webWeasel\Scripts\Activate.ps1 && uv python install 3.12 && uv pip install -U crawl4ai playwright repomix
+uv venv .webWeasel && .webWeasel\Scripts\Activate.ps1 && uv pip install -U crawl4ai playwright repomix
 ```
 
 Linux/Mac:
 ```bash
-uv venv webWeasel && source webWeasel/bin/activate && uv python install 3.12 && uv pip install -U crawl4ai playwright repomix
+uv venv .webWeasel && source .webWeasel/bin/activate && uv pip install -U crawl4ai playwright repomix
 ```
 
 ## Usage
