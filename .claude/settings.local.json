@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(eza:*)",
+      "Bash(python:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": []
+  }
+}

@@ -12,21 +12,32 @@ uv run webWeasel.py
 
 """
 
-import os
-import sys
 import asyncio
-import subprocess
+import os
 import re
-import shlex
-from typing import Optional, Tuple
+import subprocess
+import sys
+from typing import Any, Optional, Tuple
 from urllib.parse import urlparse
+
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
+from crawl4ai.content_filter_strategy import PruningContentFilter
+from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
+from crawl4ai.deep_crawling.filters import DomainFilter, FilterChain
+from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from repomix import RepoProcessor, RepomixConfig
 
 __location__ = os.path.dirname(os.path.abspath(__file__))
 __output_base__ = os.path.join(__location__, "crawler_output")
 
-# Configuration constants
+
 class CrawlConfig:
+    """
+    Configuration constants for the Web Weasel crawler.
+    
+    This class centralizes all crawling parameters to ensure consistent
+    behavior and easy maintenance of configuration values.
+    """
     MAX_DEPTH = 3
     MAX_PAGES = 500
     PAGE_TIMEOUT = 30000  # milliseconds
@@ -110,16 +121,6 @@ def prompt_user_for_config() -> Tuple[str, str]:
 
 # Create base output directory if it doesn't exist
 os.makedirs(__output_base__, exist_ok=True)
-
-# Append parent directory to system path and import crawl4ai modules
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(parent_dir)
-
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
-from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
-from crawl4ai.deep_crawling.filters import DomainFilter, FilterChain
-from crawl4ai.content_filter_strategy import PruningContentFilter
-from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 
 def main_menu() -> str:
     print("\nWelcome to Web Weasel\n")
@@ -247,11 +248,11 @@ async def main(choice: Optional[str] = None) -> None:
                 content_filter=pruning_filter,
                 content_source="raw_html",  # Use raw HTML to better preserve code blocks
                 options={
-                    "preserve_code_blocks": True,
-                    "handle_code_in_pre": True,
-                    "body_width": 0,  # No line wrapping
-                    "mark_code": True,  # Try to always fence code blocks
-                    "citations": True,
+                    "preserve_code_blocks": True,     # Maintain code block structure
+                    "handle_code_in_pre": True,       # Process <pre> tags as code
+                    "body_width": 0,                  # No line wrapping for flexibility
+                    "mark_code": True,                # Always fence code blocks for LLM compatibility
+                    "citations": True,                # Include source URLs for attribution
                 }
             )
 
@@ -323,7 +324,7 @@ async def main(choice: Optional[str] = None) -> None:
             print("Invalid choice. Returning to main menu.")
             choice = None
 
-def process_crawl_result(result, index: int, total_results: int, output_dir: str) -> bool:
+def process_crawl_result(result: Any, index: int, total_results: int, output_dir: str) -> bool:
     """
     Process a single crawl result and save to markdown file.
     

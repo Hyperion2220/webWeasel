@@ -161,3 +161,7 @@ repomix_output/
 
 # Logs
 *.log
+
+# Allow Claude Code configuration
+!.claude/
+!.claude/*.json
