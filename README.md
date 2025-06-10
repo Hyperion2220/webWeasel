@@ -2,14 +2,6 @@
 
 A high-performance web crawler built with `crawl4ai` and Playwright that extracts and processes website content into Markdown format, optimized for AI applications.
 
-## Table of Contents
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Output](#output)
-- [Configuration](#configuration)
-- [Limitations](#limitations)
-
 ## Features
 
 ### Core Functionality
@@ -32,8 +24,14 @@ A high-performance web crawler built with `crawl4ai` and Playwright that extract
 - **Organized Output**: Saves results in website-specific folders with normalized filenames
 - **Folder Selection**: Dynamic listing of available folders for Repomix processing
 - **Verbose Reporting**: Prints detailed progress, success, and error messages
-- **Smart Dependency Loading**: Only installs Playwright when needed for web crawling
-- **Graceful Exit Handling**: Cleanly exits on `CTRL+C` or input errors during prompts
+- **Browser Automation**: Leverages Playwright for reliable web content extraction
+- **Responsive Controls**: Instantly responsive `CTRL+C` exit handling with optimized async/sync architecture
+
+### Code Quality & Architecture
+- **Centralized Configuration**: All settings managed through a single `CrawlConfig` class for easy customization
+- **Modular Design**: Clean separation of concerns with helper methods and organized code structure
+- **PEP 8 Compliant**: Follows Python coding standards for maintainability and readability
+- **Comprehensive Documentation**: Inline comments explaining all configuration options and parameters
 
 ### Post-Processing
 - **Automatic Content Merging**: Uses Repomix to combine all crawled pages into a single file
@@ -42,7 +40,7 @@ A high-performance web crawler built with `crawl4ai` and Playwright that extract
 ## Installation
 
 ### Prerequisites
-- Python 3.12+
+- Python 3.8+
 - UV package manager
 
 ### Quick Setup
@@ -65,17 +63,34 @@ Linux/Mac:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-3. Set up the environment and install all dependencies in one step:
+3. Set up the environment and install all dependencies:
 
 Windows:
 ```bash
-uv venv .webWeasel && .webWeasel\Scripts\Activate.ps1 && uv pip install -U crawl4ai playwright repomix
+uv venv .webWeasel && .webWeasel\Scripts\Activate.ps1 && uv pip install -U crawl4ai repomix
 ```
 
 Linux/Mac:
 ```bash
-uv venv .webWeasel && source .webWeasel/bin/activate && uv pip install -U crawl4ai playwright repomix
+uv venv .webWeasel && source .webWeasel/bin/activate && uv pip install -U crawl4ai repomix
 ```
+
+4. Run the crawl4ai setup (required after installation):
+```bash
+crawl4ai-setup
+```
+
+This command:
+- Installs or updates Playwright browsers
+- Initializes the crawl4ai database
+- Performs OS-level compatibility checks
+
+5. (Optional) Verify installation:
+```bash
+crawl4ai-doctor
+```
+
+This diagnostic command checks for any potential issues with your installation.
 
 ## Usage
 
@@ -98,7 +113,7 @@ The interactive prompt will guide you through two simple steps:
 1. Enter the URL to crawl (e.g., "example.com" - the https:// prefix will be added automatically if omitted)
 2. Select the crawl depth mode:
    - Option 1: Single Page Crawl - Only crawls the main page
-   - Option 2: Deep Crawl (default) - Crawls all reachable pages in the domain (up to configuration limits)
+   - Option 2: Deep Crawl (default) - Crawls all reachable pages in the domain (up to configuration limits) and automatically runs Repomix to consolidate results
 
 ### If you select "Run Repomix":
 
@@ -106,7 +121,7 @@ You'll see a numbered list of all available folders in the `crawler_output` dire
 1. Select a folder by number to process it with Repomix
 2. Or enter 'c' to cancel and return to the main menu
 
-You can exit the program at any time by pressing CTRL+C.
+You can exit the program at any time by pressing CTRL+C (now with instant responsiveness thanks to optimized interrupt handling).
 
 ## Output
 
@@ -141,19 +156,30 @@ webWeasel/
 
 ## Configuration
 
-All configuration options are available in the script:
+All configuration options are centralized in the `CrawlConfig` class for easy customization:
 
+### Core Settings
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | Crawl Mode | `deep` | Choose `single` or `deep` via the interactive prompt |
-| Crawl Depth | 3 | Maximum levels deep for crawling |
-| Maximum Pages | 500 | Maximum number of pages to crawl |
-| Page Timeout | 30000 | Timeout in milliseconds (30 seconds) |
-| Concurrent Crawls | 10 | Number of simultaneous crawls |
-| Text-Only Mode | Enabled | For speed and LLM-friendly output |
-| Markdown Options | Various | Code block preservation, no line wrapping, citations, etc. |
+| MAX_DEPTH | 3 | Maximum levels deep for crawling |
+| MAX_PAGES | 500 | Maximum number of pages to crawl |
+| PAGE_TIMEOUT | 30000 | Timeout in milliseconds (30 seconds) |
+| MAX_FILENAME_LENGTH | 100 | Maximum length for generated filenames |
 
-To modify these settings, edit the `CrawlConfig` class in `webWeasel.py`.
+### Advanced Settings
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| VERBOSE | True | Print detailed crawling logs |
+| CACHE_MODE | BYPASS | Skip caching for fresh content |
+| WORD_COUNT_THRESHOLD | 1 | Keep very short blocks (important for code) |
+| EXCLUDE_EXTERNAL_LINKS | True | Keep external links for reference |
+| EXCLUDE_SOCIAL_MEDIA_LINKS | True | Remove social media noise |
+| TARGET_ELEMENTS | main, .content, #content, article, [role='main'] | Focus on main content areas |
+| EXCLUDED_SELECTOR | Copy buttons and UI elements | Remove copy buttons from output |
+
+### Customization
+To modify these settings, edit the constants in the `CrawlConfig` class in `webWeasel.py`. The class uses a centralized helper method `create_crawler_config()` to apply all settings consistently across single and deep crawl modes.
 
 ## Limitations
 
@@ -161,4 +187,4 @@ To modify these settings, edit the `CrawlConfig` class in `webWeasel.py`.
 - URLs with complex fragments might not be fully explored
 - Respects robots.txt by default
 - Output filenames are sanitized and truncated to 100 characters for compatibility
-- Playwright browser dependencies are only installed when needed for web crawling
+- Requires one-time setup with `crawl4ai-setup` for browser dependencies and database initialization

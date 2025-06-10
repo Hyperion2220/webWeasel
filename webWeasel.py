@@ -13,10 +13,9 @@ uv run webWeasel.py
 """
 
 import asyncio
-import os
 import re
-import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -26,8 +25,27 @@ from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from repomix import RepoProcessor, RepomixConfig
 
-__location__ = os.path.dirname(os.path.abspath(__file__))
-__output_base__ = os.path.join(__location__, "crawler_output")
+__output_base__ = Path("crawler_output")
+
+
+def safe_input(prompt: str) -> str:
+    """
+    Input function with consistent KeyboardInterrupt/EOFError handling.
+    
+    Args:
+        prompt: The input prompt to display
+        
+    Returns:
+        User input string
+        
+    Exits:
+        Gracefully exits on Ctrl+C or EOF
+    """
+    try:
+        return input(prompt)
+    except (KeyboardInterrupt, EOFError):
+        print("\n\nExiting Web Weasel. Goodbye!")
+        sys.exit(0)
 
 
 class CrawlConfig:
@@ -37,10 +55,49 @@ class CrawlConfig:
     This class centralizes all crawling parameters to ensure consistent
     behavior and easy maintenance of configuration values.
     """
+    # Deep crawling limits
     MAX_DEPTH = 3
     MAX_PAGES = 500
     PAGE_TIMEOUT = 30000  # milliseconds
     MAX_FILENAME_LENGTH = 100
+    
+    # Common crawler settings
+    VERBOSE = True  # Print detailed crawling logs
+    CACHE_MODE = CacheMode.BYPASS  # Skip caching for fresh content
+    WORD_COUNT_THRESHOLD = 1  # Keep very short blocks (important for code)
+    EXCLUDE_EXTERNAL_LINKS = True  # Keep external links for reference documentation
+    EXCLUDE_SOCIAL_MEDIA_LINKS = True  # Remove social media noise
+    BODY_WIDTH = 80  # Markdown body width (no line wrapping)
+    TARGET_ELEMENTS = ["main", ".content", "#content", "article", "[role='main']"]  # Focus on main content areas
+    EXCLUDED_SELECTOR = "button[aria-label*='Copy'], .copy-button, [data-copy], button:contains('Copy'), .btn-copy, .copy, [title*='Copy'], [class*='copy']"  # Remove copy buttons and similar UI elements
+    
+    @staticmethod
+    def create_crawler_config(markdown_generator, deep_crawl_strategy=None):
+        """
+        Create CrawlerRunConfig with common settings.
+        
+        Args:
+            markdown_generator: The markdown generator instance
+            deep_crawl_strategy: Optional deep crawl strategy for multi-page crawling
+            
+        Returns:
+            CrawlerRunConfig with standardized settings
+        """
+        config = {
+            "scraping_strategy": LXMLWebScrapingStrategy(),  # Faster alternative to default BeautifulSoup
+            "markdown_generator": markdown_generator,
+            "cache_mode": CrawlConfig.CACHE_MODE,
+            "page_timeout": CrawlConfig.PAGE_TIMEOUT,
+            "verbose": CrawlConfig.VERBOSE,
+            "target_elements": CrawlConfig.TARGET_ELEMENTS,
+            "excluded_selector": CrawlConfig.EXCLUDED_SELECTOR,
+            "word_count_threshold": CrawlConfig.WORD_COUNT_THRESHOLD,
+            "exclude_external_links": CrawlConfig.EXCLUDE_EXTERNAL_LINKS,
+            "exclude_social_media_links": CrawlConfig.EXCLUDE_SOCIAL_MEDIA_LINKS,
+        }
+        if deep_crawl_strategy:
+            config["deep_crawl_strategy"] = deep_crawl_strategy
+        return CrawlerRunConfig(**config)
 
 def sanitize_filename(url: str) -> str:
     """
@@ -78,11 +135,7 @@ def prompt_user_for_config() -> Tuple[str, str]:
     Handles KeyboardInterrupt and EOFError for graceful exit.
     """
     while True:
-        try:
-            url_input = input("Enter the URL to crawl: ").strip()
-        except (KeyboardInterrupt, EOFError):
-            print("\n\nExiting Web Weasel. Goodbye!")
-            sys.exit(0)
+        url_input = safe_input("Enter the URL to crawl: ").strip()
         # Normalize URL: add https:// if missing
         if url_input:
             if not url_input.startswith("http://") and not url_input.startswith("https://"):
@@ -97,11 +150,7 @@ def prompt_user_for_config() -> Tuple[str, str]:
     print("  2. Deep Crawl")
     print()
     while True:
-        try:
-            depth_choice = input("Enter Choice or (c)ancel: ").strip().lower()
-        except (KeyboardInterrupt, EOFError):
-            print("\n\nExiting Web Weasel. Goodbye!")
-            sys.exit(0)
+        depth_choice = safe_input("Enter Choice or (c)ancel: ").strip().lower()
         if depth_choice == "1":
             depth_mode = "single"
             break
@@ -117,7 +166,7 @@ def prompt_user_for_config() -> Tuple[str, str]:
     return target_url, depth_mode
 
 # Create base output directory if it doesn't exist
-os.makedirs(__output_base__, exist_ok=True)
+__output_base__.mkdir(exist_ok=True)
 
 def main_menu() -> str:
     print("\nWelcome to Web Weasel\n")
@@ -126,16 +175,12 @@ def main_menu() -> str:
     print("3. Exit")
     print()
     while True:
-        try:
-            choice = input("Select an option: ").strip().lower()
-            if choice in ("1", "2", "3"):
-                return choice
-            print("Invalid input. Please enter 1, 2, or 3.")
-        except (KeyboardInterrupt, EOFError):
-            print("\n\nExiting Web Weasel. Goodbye!")
-            sys.exit(0)
+        choice = safe_input("Select an option: ").strip().lower()
+        if choice in ("1", "2", "3"):
+            return choice
+        print("Invalid input. Please enter 1, 2, or 3.")
 
-def extract_domain_info(target_url: str) -> Tuple[str, str, str]:
+def extract_domain_info(target_url: str) -> Tuple[str, str, Path]:
     """
     Extract domain information from URL.
     
@@ -143,46 +188,25 @@ def extract_domain_info(target_url: str) -> Tuple[str, str, str]:
         target_url: The URL to process
         
     Returns:
-        Tuple of (parsed_url.netloc, website_name, output_directory)
+        Tuple of (parsed_url.netloc, website_name, output_directory_path)
     """
     parsed_url = urlparse(target_url)
     domain = parsed_url.netloc
     
     # Extract website name (main domain, e.g., 'ai.pydantic.dev' -> 'pydantic', 'docs.crawl4ai.com' -> 'crawl4ai')
     domain_parts = domain.split('.')
-    if len(domain_parts) >= 2:
-        website_name = domain_parts[-2]
-    else:
-        website_name = domain_parts[0]
+    website_name = domain_parts[-2] if len(domain_parts) >= 2 else domain_parts[0]
     
     # Create website-specific output directory
-    output_dir = os.path.join(__output_base__, website_name)
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir = __output_base__ / website_name
+    output_dir.mkdir(exist_ok=True)
     
     return domain, website_name, output_dir
 
-def install_playwright_dependencies() -> None:
-    """Install Playwright browser dependencies."""
-    print("Installing Playwright browser dependencies...")
-    try:
-        # Use explicit argument list to prevent injection
-        cmd = ["playwright", "install", "--with-deps", "chromium"]
-        subprocess.run(cmd,
-                       stdout=subprocess.PIPE,
-                       stderr=subprocess.PIPE,
-                       check=True,
-                       shell=False)  # Explicitly disable shell
-        print("Playwright browser dependencies installed successfully!")
-    except subprocess.CalledProcessError as e:
-        print(f"Warning: Playwright installation may have issues: {e}")
-        print("Continuing anyway as browsers might already be installed...")
-    except FileNotFoundError:
-        print("Warning: Playwright command not found. Make sure it's installed properly.")
-        print("Continuing anyway as browsers might already be installed...")
 
-def select_crawler_output_folder() -> Optional[str]:
-    base_dir = os.path.join(__location__, "crawler_output")
-    folders = [f for f in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, f))]
+def select_crawler_output_folder() -> Optional[Path]:
+    base_dir = __output_base__
+    folders = [f.name for f in base_dir.iterdir() if f.is_dir()]
     if not folders:
         print("No folders found in crawler_output.")
         return None
@@ -191,18 +215,13 @@ def select_crawler_output_folder() -> Optional[str]:
         print(f"  {idx}. {folder}")
     print()
     while True:
-        try:
-            choice = input(f"Select a folder by number or (c)ancel: ").strip().lower()
-        except (KeyboardInterrupt, EOFError):
-            print("\n\nExiting Web Weasel. Goodbye!")
-            sys.exit(0)
+        choice = safe_input(f"Select a folder by number or (c)ancel: ").strip().lower()
         if choice == 'c':
             return None
         if choice.isdigit() and 1 <= int(choice) <= len(folders):
-            return os.path.join(base_dir, folders[int(choice)-1])
+            return base_dir / folders[int(choice)-1]
         print("Invalid input. Please enter a valid number or 'c' to cancel.")
 
-# Update main to accept choice as argument and skip menu
 async def main(choice: str) -> None:
     if choice == "1":
         # Prompt user for config
@@ -210,18 +229,16 @@ async def main(choice: str) -> None:
         if target_url == "__CANCEL__" or depth_mode == "__CANCEL__":
             # User cancelled, return to main menu
             return
-        # Install Playwright browser dependencies after URL is entered
-        install_playwright_dependencies()
         
         # Extract domain for filtering
-        domain, website_name, __output__ = extract_domain_info(target_url)
+        domain, _, __output__ = extract_domain_info(target_url)
         
         print(f"\n=== Fast Deep Crawling of {domain} ===")
         
         # Configure the browser for optimal performance
         browser_config = BrowserConfig(
-            headless=True,
-            browser_type="chromium",
+            headless=True,  # Run browser invisibly (set False for debugging)
+            browser_type="chromium",  # Browser engine: "chromium", "firefox", or "webkit"
             text_mode=True,  # Faster as it doesn't load images
             extra_args=[
                 "--disable-gpu", 
@@ -232,12 +249,12 @@ async def main(choice: str) -> None:
 
         # Create DefaultMarkdownGenerator
         markdown_generator = DefaultMarkdownGenerator(
-            content_source="cleaned_html",
+            content_source="cleaned_html",  # Use processed HTML with boilerplate removed
             options={
                 "ignore_links": True,         # Keep links for context
                 "ignore_images": True,        # Remove images for cleaner output
                 "escape_html": True,         # Don't escape HTML entities in code
-                "body_width": 80,             # No line wrapping
+                "body_width": CrawlConfig.BODY_WIDTH,             # No line wrapping
                 "include_sup_sub": True,        # Include superscripts and subscripts
                 "mark_code": True,            # Properly mark code blocks
             }
@@ -246,39 +263,16 @@ async def main(choice: str) -> None:
         # Decide crawl strategy based on depth argument
         if depth_mode == "single":
             # Single page (no deep crawling)
-            crawl_config = CrawlerRunConfig(
-                scraping_strategy=LXMLWebScrapingStrategy(),  # Faster alternative to default BeautifulSoup
-                markdown_generator=markdown_generator,
-                cache_mode=CacheMode.BYPASS,
-                page_timeout=CrawlConfig.PAGE_TIMEOUT,
-                verbose=True,
-                target_elements=["main", ".content", "#content", "article", "[role='main']"],  # Focus on main content areas
-                excluded_selector="button[aria-label*='Copy'], .copy-button, [data-copy], button:contains('Copy'), .btn-copy, .copy, [title*='Copy'], [class*='copy']",  # Remove copy buttons and similar UI elements
-                word_count_threshold=1,            # Keep very short blocks (important for code)
-                exclude_external_links=True,     # Keep external links for reference documentation
-                exclude_social_media_links=True,  # Remove social media noise
-            )
+            crawl_config = CrawlConfig.create_crawler_config(markdown_generator)
             print(f"Starting single-page crawl of {target_url}...")
         else:
             # Deep crawl - (Breadth-First Search): Explores the website level by level.
             deep_crawl_strategy = BFSDeepCrawlStrategy(
-                max_depth=CrawlConfig.MAX_DEPTH,
+                max_depth=CrawlConfig.MAX_DEPTH,  # Number of levels to crawl beyond starting page
                 include_external=False,  # Stay within the domain
-                max_pages=CrawlConfig.MAX_PAGES
+                max_pages=CrawlConfig.MAX_PAGES  # Maximum number of pages to crawl
             )
-            crawl_config = CrawlerRunConfig(
-                scraping_strategy=LXMLWebScrapingStrategy(),  # Faster alternative to default BeautifulSoup
-                markdown_generator=markdown_generator,
-                cache_mode=CacheMode.BYPASS,  # Fresh content
-                deep_crawl_strategy=deep_crawl_strategy,
-                page_timeout=CrawlConfig.PAGE_TIMEOUT,
-                verbose=True,  # See progress
-                target_elements=["main", ".content", "#content", "article", "[role='main']"],  # Focus on main content areas
-                excluded_selector="button[aria-label*='Copy'], .copy-button, [data-copy], button:contains('Copy'), .btn-copy, .copy, [title*='Copy'], [class*='copy']",  # Remove copy buttons and similar UI elements
-                word_count_threshold=1,            # Keep very short blocks (important for code)
-                exclude_external_links=True,     # Keep external links for reference documentation
-                exclude_social_media_links=True,  # Remove social media noise
-            )
+            crawl_config = CrawlConfig.create_crawler_config(markdown_generator, deep_crawl_strategy)
             print(f"Starting deep crawl of {target_url}...")
 
         # Create the crawler and run it
@@ -307,7 +301,7 @@ async def main(choice: str) -> None:
                 postprocess_with_repomix(__output__)
     elif choice == "2":
         folder = select_crawler_output_folder()
-        if folder and os.path.isdir(folder):
+        if folder and folder.is_dir():
             postprocess_with_repomix(folder)
         elif folder is None:
             print("Cancelled.")
@@ -349,7 +343,7 @@ def process_crawl_result(result: Any, index: int, total_results: int, output_dir
             
     if markdown_content:
         try:
-            with open(os.path.join(output_dir, f"{filename}.md"), "w", encoding="utf-8") as f:
+            with open(output_dir / f"{filename}.md", "w", encoding="utf-8") as f:
                 f.write(markdown_content)
             print(f"✅ [{index+1}/{total_results}] Saved markdown for {url}")
             return True
@@ -359,18 +353,18 @@ def process_crawl_result(result: Any, index: int, total_results: int, output_dir
     
     return False
 
-def postprocess_with_repomix(output_folder: str) -> None:
+def postprocess_with_repomix(output_folder: Path) -> None:
     """
     Post-process all .md files in the output_folder using repomix, compiling them into a single .md file.
     Output is written to a new 'repomix_output' directory at the same level as output_folder.
     """
     # Write repomix output to a subfolder named after the main domain (website_name)
-    website_name = os.path.basename(output_folder)
-    repomix_dir = os.path.join(__location__, "repomix_output", website_name)
-    os.makedirs(repomix_dir, exist_ok=True)
-    output_file = os.path.join(repomix_dir, f"repomix_{website_name}.md")
+    website_name = output_folder.name
+    repomix_dir = Path("repomix_output") / website_name
+    repomix_dir.mkdir(parents=True, exist_ok=True)
+    output_file = repomix_dir / f"repomix_{website_name}.md"
     config = RepomixConfig()
-    config.output.file_path = output_file
+    config.output.file_path = str(output_file)
     config.output.style = "markdown"
     config.output.header_text = ""
     config.output.instruction_file_path = ""
@@ -391,7 +385,7 @@ def postprocess_with_repomix(output_folder: str) -> None:
     config.security.exclude_suspicious_files = False
     print("\nPacking your codebase into an AI-friendly format...")
     try:
-        processor = RepoProcessor(output_folder, config=config)
+        processor = RepoProcessor(str(output_folder), config=config)
         result = processor.process()
         print("\nRepomix completed!")
         print(f"Compiled output file: {result.config.output.file_path}")
