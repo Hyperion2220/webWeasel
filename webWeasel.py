@@ -21,9 +21,8 @@ from typing import Any, Optional, Tuple
 from urllib.parse import urlparse
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
-from crawl4ai.content_filter_strategy import PruningContentFilter
+from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
-from crawl4ai.deep_crawling.filters import DomainFilter, FilterChain
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from repomix import RepoProcessor, RepomixConfig
 
@@ -41,8 +40,6 @@ class CrawlConfig:
     MAX_DEPTH = 3
     MAX_PAGES = 500
     PAGE_TIMEOUT = 30000  # milliseconds
-    SEMAPHORE_COUNT = 10
-    SINGLE_PAGE_SEMAPHORE = 1
     MAX_FILENAME_LENGTH = 100
 
 def sanitize_filename(url: str) -> str:
@@ -131,12 +128,12 @@ def main_menu() -> str:
     while True:
         try:
             choice = input("Select an option: ").strip().lower()
+            if choice in ("1", "2", "3"):
+                return choice
+            print("Invalid input. Please enter 1, 2, or 3.")
         except (KeyboardInterrupt, EOFError):
             print("\n\nExiting Web Weasel. Goodbye!")
             sys.exit(0)
-        if choice in ("1", "2", "3"):
-            return choice
-        print("Invalid input. Please enter 1, 2, or 3.")
 
 def extract_domain_info(target_url: str) -> Tuple[str, str, str]:
     """
@@ -206,123 +203,116 @@ def select_crawler_output_folder() -> Optional[str]:
         print("Invalid input. Please enter a valid number or 'c' to cancel.")
 
 # Update main to accept choice as argument and skip menu
-async def main(choice: Optional[str] = None) -> None:
-    while True:
-        if choice is None:
-            choice = main_menu()
-        if choice == "1":
-            # Prompt user for config
-            target_url, depth_mode = prompt_user_for_config()
-            if target_url == "__CANCEL__" or depth_mode == "__CANCEL__":
-                # User cancelled, return to main menu
-                choice = None
-                continue
-            # Install Playwright browser dependencies after URL is entered
-            install_playwright_dependencies()
-            
-            # Extract domain for filtering
-            domain, website_name, __output__ = extract_domain_info(target_url)
-            
-            print(f"\n=== Fast Deep Crawling of {domain} ===")
-            
-            # Configure the browser for optimal performance
-            browser_config = BrowserConfig(
-                headless=True,
-                browser_type="chromium",
-                text_mode=True,  # Faster as it doesn't load images
-                extra_args=[
-                    "--disable-gpu", 
-                    "--disable-dev-shm-usage", 
-                    "--no-sandbox"
-                ]
+async def main(choice: str) -> None:
+    if choice == "1":
+        # Prompt user for config
+        target_url, depth_mode = prompt_user_for_config()
+        if target_url == "__CANCEL__" or depth_mode == "__CANCEL__":
+            # User cancelled, return to main menu
+            return
+        # Install Playwright browser dependencies after URL is entered
+        install_playwright_dependencies()
+        
+        # Extract domain for filtering
+        domain, website_name, __output__ = extract_domain_info(target_url)
+        
+        print(f"\n=== Fast Deep Crawling of {domain} ===")
+        
+        # Configure the browser for optimal performance
+        browser_config = BrowserConfig(
+            headless=True,
+            browser_type="chromium",
+            text_mode=True,  # Faster as it doesn't load images
+            extra_args=[
+                "--disable-gpu", 
+                "--disable-dev-shm-usage", 
+                "--no-sandbox"
+            ]
+        )
+
+        # Create DefaultMarkdownGenerator
+        markdown_generator = DefaultMarkdownGenerator(
+            content_source="cleaned_html",
+            options={
+                "ignore_links": True,         # Keep links for context
+                "ignore_images": True,        # Remove images for cleaner output
+                "escape_html": True,         # Don't escape HTML entities in code
+                "body_width": 80,             # No line wrapping
+                "include_sup_sub": True,        # Include superscripts and subscripts
+                "mark_code": True,            # Properly mark code blocks
+            }
+        )
+
+        # Decide crawl strategy based on depth argument
+        if depth_mode == "single":
+            # Single page (no deep crawling)
+            crawl_config = CrawlerRunConfig(
+                scraping_strategy=LXMLWebScrapingStrategy(),  # Faster alternative to default BeautifulSoup
+                markdown_generator=markdown_generator,
+                cache_mode=CacheMode.BYPASS,
+                page_timeout=CrawlConfig.PAGE_TIMEOUT,
+                verbose=True,
+                target_elements=["main", ".content", "#content", "article", "[role='main']"],  # Focus on main content areas
+                excluded_selector="button[aria-label*='Copy'], .copy-button, [data-copy], button:contains('Copy'), .btn-copy, .copy, [title*='Copy'], [class*='copy']",  # Remove copy buttons and similar UI elements
+                word_count_threshold=1,            # Keep very short blocks (important for code)
+                exclude_external_links=True,     # Keep external links for reference documentation
+                exclude_social_media_links=True,  # Remove social media noise
             )
-
-            # Create a filter chain for domain restriction
-            filter_chain = FilterChain([
-                DomainFilter(allowed_domains=[domain]),
-            ])
-
-            # Create PruningContentFilter and DefaultMarkdownGenerator
-            pruning_filter = PruningContentFilter()
-            markdown_generator = DefaultMarkdownGenerator(
-                content_filter=pruning_filter,
-                content_source="raw_html",  # Use raw HTML to better preserve code blocks
-                options={
-                    "preserve_code_blocks": True,     # Maintain code block structure
-                    "handle_code_in_pre": True,       # Process <pre> tags as code
-                    "body_width": 0,                  # No line wrapping for flexibility
-                    "mark_code": True,                # Always fence code blocks for LLM compatibility
-                    "citations": True,                # Include source URLs for attribution
-                }
-            )
-
-            # Decide crawl strategy based on depth argument
-            if depth_mode == "single":
-                # Single page (no deep crawling)
-                crawl_config = CrawlerRunConfig(
-                    cache_mode=CacheMode.BYPASS,
-                    page_timeout=CrawlConfig.PAGE_TIMEOUT,
-                    verbose=True,
-                    semaphore_count=CrawlConfig.SINGLE_PAGE_SEMAPHORE,  # Only one page at a time
-                    markdown_generator=markdown_generator,
-                )
-                print(f"Starting single-page crawl of {target_url}...")
-            else:
-                # Deep crawl - (Breadth-First Search): Explores the website level by level.
-                deep_crawl_strategy = BFSDeepCrawlStrategy(
-                    max_depth=CrawlConfig.MAX_DEPTH,
-                    include_external=False,  # Stay within the domain
-                    max_pages=CrawlConfig.MAX_PAGES,
-                    filter_chain=filter_chain
-                )
-                crawl_config = CrawlerRunConfig(
-                    cache_mode=CacheMode.BYPASS,  # Fresh content
-                    deep_crawl_strategy=deep_crawl_strategy,
-                    page_timeout=CrawlConfig.PAGE_TIMEOUT,
-                    verbose=True,  # See progress
-                    semaphore_count=CrawlConfig.SEMAPHORE_COUNT,
-                    markdown_generator=markdown_generator,
-                )
-                print(f"Starting deep crawl of {target_url}...")
-
-            # Create the crawler and run it
-            async with AsyncWebCrawler(config=browser_config) as crawler:
-                results = await crawler.arun(
-                    url=target_url, 
-                    config=crawl_config
-                )
-                
-                print(f"\n===== Crawl complete! Found {len(results) if isinstance(results, list) else 1} pages =====")
-                
-                # Process results (list or single result only, no streaming)
-                result_list = results if isinstance(results, list) else [results]
-                success_count = 0
-                
-                for i, result in enumerate(result_list):
-                    if process_crawl_result(result, i, len(result_list), __output__):
-                        success_count += 1
-                print(f"\nCrawling complete!")
-                print(f"  - Successfully saved: {success_count} markdown files")
-                print(f"  - Failed: {len(result_list) - success_count}")
-                print(f"  - Results saved to: {__output__}")
-                # Post-process with repomix
-                postprocess_with_repomix(__output__)
-            choice = None  # Return to main menu
-        elif choice == "2":
-            folder = select_crawler_output_folder()
-            if folder and os.path.isdir(folder):
-                postprocess_with_repomix(folder)
-            elif folder is None:
-                print("Cancelled.")
-            else:
-                print("Invalid folder selection.")
-            choice = None  # Return to main menu
-        elif choice == "3":
-            print("Goodbye!")
-            sys.exit(0)
+            print(f"Starting single-page crawl of {target_url}...")
         else:
-            print("Invalid choice. Returning to main menu.")
-            choice = None
+            # Deep crawl - (Breadth-First Search): Explores the website level by level.
+            deep_crawl_strategy = BFSDeepCrawlStrategy(
+                max_depth=CrawlConfig.MAX_DEPTH,
+                include_external=False,  # Stay within the domain
+                max_pages=CrawlConfig.MAX_PAGES
+            )
+            crawl_config = CrawlerRunConfig(
+                scraping_strategy=LXMLWebScrapingStrategy(),  # Faster alternative to default BeautifulSoup
+                markdown_generator=markdown_generator,
+                cache_mode=CacheMode.BYPASS,  # Fresh content
+                deep_crawl_strategy=deep_crawl_strategy,
+                page_timeout=CrawlConfig.PAGE_TIMEOUT,
+                verbose=True,  # See progress
+                target_elements=["main", ".content", "#content", "article", "[role='main']"],  # Focus on main content areas
+                excluded_selector="button[aria-label*='Copy'], .copy-button, [data-copy], button:contains('Copy'), .btn-copy, .copy, [title*='Copy'], [class*='copy']",  # Remove copy buttons and similar UI elements
+                word_count_threshold=1,            # Keep very short blocks (important for code)
+                exclude_external_links=True,     # Keep external links for reference documentation
+                exclude_social_media_links=True,  # Remove social media noise
+            )
+            print(f"Starting deep crawl of {target_url}...")
+
+        # Create the crawler and run it
+        async with AsyncWebCrawler(config=browser_config) as crawler:
+            results = await crawler.arun(
+                url=target_url, 
+                config=crawl_config
+            )
+            
+            print(f"\n===== Crawl complete! Found {len(results) if isinstance(results, list) else 1} pages =====")
+            
+            # Process results (list or single result only, no streaming)
+            result_list = results if isinstance(results, list) else [results]
+            success_count = 0
+            
+            for i, result in enumerate(result_list):
+                if process_crawl_result(result, i, len(result_list), __output__):
+                    success_count += 1
+            print(f"\nCrawling complete!")
+            print(f"  - Successfully saved: {success_count} markdown files")
+            print(f"  - Failed: {len(result_list) - success_count}")
+            print(f"  - Results saved to: {__output__}")
+            
+            # Only run Repomix for deep crawls
+            if depth_mode == "deep":
+                postprocess_with_repomix(__output__)
+    elif choice == "2":
+        folder = select_crawler_output_folder()
+        if folder and os.path.isdir(folder):
+            postprocess_with_repomix(folder)
+        elif folder is None:
+            print("Cancelled.")
+        else:
+            print("Invalid folder selection.")
 
 def process_crawl_result(result: Any, index: int, total_results: int, output_dir: str) -> bool:
     """
@@ -385,7 +375,7 @@ def postprocess_with_repomix(output_folder: str) -> None:
     config.output.header_text = ""
     config.output.instruction_file_path = ""
     config.output.remove_comments = False
-    config.output.remove_empty_lines = False
+    config.output.remove_empty_lines = True
     config.output.top_files_length = 5
     config.output.show_line_numbers = False
     config.output.copy_to_clipboard = False
@@ -415,8 +405,13 @@ def postprocess_with_repomix(output_folder: str) -> None:
         print("Individual markdown files are still available in the output folder.")
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n\nExiting Web Weasel. Goodbye!")
-        sys.exit(0)
+    while True:
+        try:
+            choice = main_menu()
+            if choice == "3":
+                print("Goodbye!")
+                sys.exit(0)
+            asyncio.run(main(choice))
+        except KeyboardInterrupt:
+            print("\n\nExiting Web Weasel. Goodbye!")
+            sys.exit(0)
