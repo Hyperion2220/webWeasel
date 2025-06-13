@@ -6,7 +6,7 @@ A high-performance web crawler built with `crawl4ai` and Playwright that extract
 
 ### Core Functionality
 - **Deep Crawling**: Uses breadth-first search to traverse websites up to 3 levels deep
-- **Domain Filtering**: Stays within the specified domain during crawling
+- **Exact Domain Filtering**: Only crawls pages within the specified domain
 - **Performance Optimized**: Configured for speed with concurrent crawling
 - **Text-Only Crawling**: Uses Playwright's `text_mode=True` for faster, image-free crawling
 - **Two Operating Modes**: Run as website crawler or process existing content with Repomix
@@ -133,8 +133,9 @@ Web Weasel generates two types of output:
 - Filenames are normalized and truncated for compatibility
 
 ### Consolidated Markdown File (via Repomix)
-- Saved in: `repomix-output/<domain>/repomix-<domain>.md`
+- Saved in: `repomix_output/<domain>/repomix_<domain>.md`
 - Combines all crawled pages into a single well-structured file
+- Enhanced content cleaning: removes comments and empty lines for cleaner output
 - Perfect for LLM ingestion, RAG systems, or easy sharing
 
 ### Output Structure
@@ -173,9 +174,9 @@ All configuration options are centralized in the `CrawlConfig` class for easy cu
 | VERBOSE | True | Print detailed crawling logs |
 | CACHE_MODE | BYPASS | Skip caching for fresh content |
 | WORD_COUNT_THRESHOLD | 1 | Keep very short blocks (important for code) |
-| EXCLUDE_EXTERNAL_LINKS | True | Keep external links for reference |
+| EXCLUDE_EXTERNAL_LINKS | True | Block all external links to stay within domain |
 | EXCLUDE_SOCIAL_MEDIA_LINKS | True | Remove social media noise |
-| TARGET_ELEMENTS | main, .content, #content, article, [role='main'] | Focus on main content areas |
+| TARGET_ELEMENTS | main, .content, #content | Focus on main content areas |
 | EXCLUDED_SELECTOR | Copy buttons and UI elements | Remove copy buttons from output |
 
 ### Customization

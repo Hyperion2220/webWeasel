@@ -65,10 +65,11 @@ class CrawlConfig:
     VERBOSE = True  # Print detailed crawling logs
     CACHE_MODE = CacheMode.BYPASS  # Skip caching for fresh content
     WORD_COUNT_THRESHOLD = 1  # Keep very short blocks (important for code)
-    EXCLUDE_EXTERNAL_LINKS = True  # Keep external links for reference documentation
+    EXCLUDE_EXTERNAL_LINKS = True  # Block all external links to stay within domain
     EXCLUDE_SOCIAL_MEDIA_LINKS = True  # Remove social media noise
     BODY_WIDTH = 80  # Markdown body width (no line wrapping)
-    TARGET_ELEMENTS = ["main", ".content", "#content", "article", "[role='main']"]  # Focus on main content areas
+    EXCLUDED_TAGS = ["nav", "navigation", "header", "footer", "sidebar"]  # Remove navigation, footer, and sidebar elements
+    TARGET_ELEMENTS = ["main", ".content", "#content"]  # Focus on main content areas
     EXCLUDED_SELECTOR = "button[aria-label*='Copy'], .copy-button, [data-copy], button:contains('Copy'), .btn-copy, .copy, [title*='Copy'], [class*='copy']"  # Remove copy buttons and similar UI elements
     
     @staticmethod
@@ -90,11 +91,14 @@ class CrawlConfig:
             "page_timeout": CrawlConfig.PAGE_TIMEOUT,
             "verbose": CrawlConfig.VERBOSE,
             "target_elements": CrawlConfig.TARGET_ELEMENTS,
+            "excluded_tags": CrawlConfig.EXCLUDED_TAGS,
             "excluded_selector": CrawlConfig.EXCLUDED_SELECTOR,
             "word_count_threshold": CrawlConfig.WORD_COUNT_THRESHOLD,
             "exclude_external_links": CrawlConfig.EXCLUDE_EXTERNAL_LINKS,
             "exclude_social_media_links": CrawlConfig.EXCLUDE_SOCIAL_MEDIA_LINKS,
         }
+        
+        
         if deep_crawl_strategy:
             config["deep_crawl_strategy"] = deep_crawl_strategy
         return CrawlerRunConfig(**config)
@@ -267,10 +271,20 @@ async def main(choice: str) -> None:
             print(f"Starting single-page crawl of {target_url}...")
         else:
             # Deep crawl - (Breadth-First Search): Explores the website level by level.
+            from crawl4ai.deep_crawling.filters import FilterChain, DomainFilter
+            
+            # Create explicit domain filter to ensure we stay within the target domain
+            print(f"Setting up domain filter to only allow: {domain}")
+            domain_filter = DomainFilter(
+                allowed_domains=[domain],  # Only allow the exact target domain
+                blocked_domains=[]  # No additional blocked domains needed
+            )
+            
             deep_crawl_strategy = BFSDeepCrawlStrategy(
                 max_depth=CrawlConfig.MAX_DEPTH,  # Number of levels to crawl beyond starting page
                 include_external=False,  # Stay within the domain
-                max_pages=CrawlConfig.MAX_PAGES  # Maximum number of pages to crawl
+                max_pages=CrawlConfig.MAX_PAGES,  # Maximum number of pages to crawl
+                filter_chain=FilterChain([domain_filter])  # Explicit domain filtering
             )
             crawl_config = CrawlConfig.create_crawler_config(markdown_generator, deep_crawl_strategy)
             print(f"Starting deep crawl of {target_url}...")
@@ -368,7 +382,7 @@ def postprocess_with_repomix(output_folder: Path) -> None:
     config.output.style = "markdown"
     config.output.header_text = ""
     config.output.instruction_file_path = ""
-    config.output.remove_comments = False
+    config.output.remove_comments = True
     config.output.remove_empty_lines = True
     config.output.top_files_length = 5
     config.output.show_line_numbers = False

@@ -4,7 +4,9 @@
       "Bash(eza:*)",
       "Bash(python:*)",
       "Bash(git add:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "WebFetch(domain:docs.crawl4ai.com)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }
