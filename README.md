@@ -67,12 +67,12 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 Windows:
 ```bash
-uv venv .webWeasel && .webWeasel\Scripts\Activate.ps1 && uv pip install -U crawl4ai repomix
+uv venv .venv && .venv\Scripts\Activate.ps1 && uv pip install -U crawl4ai repomix
 ```
 
 Linux/Mac:
 ```bash
-uv venv .webWeasel && source .webWeasel/bin/activate && uv pip install -U crawl4ai repomix
+uv venv .venv && source .venv/bin/activate && uv pip install -U crawl4ai repomix
 ```
 
 4. Run the crawl4ai setup (required after installation):

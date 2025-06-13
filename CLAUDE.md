@@ -34,10 +34,13 @@ uv run webWeasel.py
 ### Environment Setup
 ```bash
 # Create virtual environment and install dependencies
-uv venv .webWeasel && source .webWeasel/bin/activate && uv pip install -U crawl4ai playwright repomix
+uv venv .venv && source .venv/bin/activate && uv pip install -U crawl4ai repomix
 
-# Install Playwright browser dependencies (done automatically when crawling)
-playwright install --with-deps chromium
+# Required setup after installation (initializes crawl4ai database and browsers)
+crawl4ai-setup
+
+# Optional: Verify installation
+crawl4ai-doctor
 ```
 
 ### Testing and Development
@@ -60,6 +63,13 @@ No specific test framework is configured. The application relies on runtime test
 ### Single-File Script Pattern
 The application uses UV's script dependencies pattern with inline dependency declaration at the top of `webWeasel.py`. All dependencies are declared in the `# /// script` block.
 
+### Key Implementation Details
+- `CrawlConfig` class centralizes all configuration constants and provides a factory method for creating crawler configurations
+- `sanitize_filename()` function converts URLs to safe filenames with length limits and security sanitization  
+- `safe_input()` wrapper handles KeyboardInterrupt/EOFError consistently throughout the UI
+- Async crawler management with proper context handling using `async with AsyncWebCrawler()`
+- Results processing handles both single results and result lists from different crawl modes
+
 ### Security Considerations
 - Input sanitization for URLs and filenames prevents directory traversal
 - Subprocess calls use explicit argument lists to prevent injection
@@ -74,3 +84,4 @@ The application uses UV's script dependencies pattern with inline dependency dec
 - Text-only crawling mode (no images) for faster processing
 - Configurable semaphore counts for concurrent crawling
 - Browser optimization flags for headless operation
+- Prefers `fit_markdown` over `raw_markdown` for better AI-optimized content
