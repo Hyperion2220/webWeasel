@@ -308,7 +308,7 @@ async def main(choice: str) -> None:
         else:
             print("Invalid folder selection.")
 
-def process_crawl_result(result: Any, index: int, total_results: int, output_dir: str) -> bool:
+def process_crawl_result(result: Any, index: int, total_results: int, output_dir: Path) -> bool:
     """
     Process a single crawl result and save to markdown file.
     
